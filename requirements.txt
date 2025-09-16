@@ -11,3 +11,5 @@ python-dotenv==1.0.1
 httpx==0.27.2 
 
 psycopg2-binary==2.9.9 # Para PostgreSQL
+
+uvicorn[standard]
