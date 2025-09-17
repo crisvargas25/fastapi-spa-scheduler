@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8080
 
 # Usa forma shell para que $PORT se expanda en runtime
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}
