@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from ..database import get_db
-from ..models import Conversation
+from ..models import Service, Conversation  # Importa Service y Conversation
 import os
 from dotenv import load_dotenv
 
@@ -14,8 +14,8 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 @router.post("/incoming")
 async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
-    from_number = form.get("From")  # Número de WhatsApp del usuario
-    message = form.get("Body")  # Mensaje recibido
+    from_number = form.get("From")
+    message = form.get("Body")
 
     if not from_number or not message:
         raise HTTPException(status_code=400, detail="Invalid request")

@@ -7,3 +7,5 @@ httpx==0.27.2
 psycopg2-binary==2.9.9
 twilio==9.3.3  # Para WhatsApp webhooks y envíos
 python-dateutil==2.9.0.post0  # Para parsear RRULES y generar fechas disponibles
+
+python-multipart==0.0.9 # Nueva dependencia para form parsing
