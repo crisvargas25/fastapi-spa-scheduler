@@ -17,6 +17,13 @@ TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
+def build_quick_replies(items):
+    """Construye tags <QuickReply> a partir de una lista de dicts {payload, title}"""
+    quick_replies_xml = ""
+    for item in items:
+        quick_replies_xml += f'<QuickReply payload="{item["payload"]}">{item["title"]}</QuickReply>'
+    return quick_replies_xml
+
 @router.post("/incoming")
 async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     logger.info("Webhook llamado - Solicitud recibida")
@@ -41,18 +48,16 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
 
     # Flujo con botones
     response = MessagingResponse()
-    if conv.state == "start":
+    twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
+    if conv.state == "choose_service":
         # Lista servicios como botones (quick replies)
         services = db.query(Service).all()
-        logger.info(f"Servicios encontrados: {services}")  # Debug
+        logger.info(f"Servicios encontrados: {services}")
         if not services:
-            response.message("No hay servicios disponibles. Contacta a soporte.")
+            twiml += "<Message>No hay servicios disponibles. Contacta a soporte.</Message>"
         else:
             quick_replies = [{"payload": str(service.id), "title": service.name} for service in services]
-            response.message(
-                "Hola! Bienvenido a Spa Splendeur. Elige un servicio:",
-                quick_replies=quick_replies
-            )
+            twiml += f"<Message><Body>Hola! Bienvenido a Spa Splendeur. Elige un servicio:</Body>{build_quick_replies(quick_replies)}</Message>"
             conv.state = "choose_service"
             conv.data = "{}"  # Inicializa data como JSON vacío
             db.commit()
@@ -62,28 +67,27 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
             service_id = int(message)  # Payload es el ID como string
             service = db.query(Service).filter_by(id=service_id).first()
             if not service:
-                response.message("Servicio no válido. Elige de nuevo.")
+                twiml += "<Message>Servicio no válido. Elige de nuevo.</Message>"
                 services = db.query(Service).all()
                 quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
-                response.message("Elige un servicio:", quick_replies=quick_replies)
+                twiml += f"<Message><Body>Elige un servicio:</Body>{build_quick_replies(quick_replies)}</Message>"
             else:
                 conv.data = f'{{"service_id": {service_id}}}'
                 conv.state = "choose_date"
                 db.commit()
                 # Lista días disponibles (próximos 7 días, placeholder)
-                response.message(f"Has elegido: {service.name}. Elige una fecha:")
+                twiml += f"<Message><Body>Has elegido: {service.name}. Elige una fecha:</Body>"
                 dates = [(datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
                 quick_replies = [{"payload": date, "title": date} for date in dates]
-                response.message(quick_replies=quick_replies)
+                twiml += f"{build_quick_replies(quick_replies)}</Message>"
         except ValueError:
-            response.message("Selección inválida. Elige de nuevo.")
+            twiml += "<Message>Selección inválida. Elige de nuevo.</Message>"
             services = db.query(Service).all()
             quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
-            response.message("Elige un servicio:", quick_replies=quick_replies)
+            twiml += f"<Message><Body>Elige un servicio:</Body>{build_quick_replies(quick_replies)}</Message>"
     else:
-        response.message("Estado no manejado. Contacta a soporte.")
+        twiml += "<Message>Estado no manejado. Contacta a soporte.</Message>"
 
-    # Devuelve Response con Content-Type XML
-    xml_content = str(response)
-    logger.info(f"Respuesta XML enviada: {xml_content[:100]}...")
-    return Response(content=xml_content, media_type="text/xml")
+    twiml += "</Response>"
+    logger.info(f"Respuesta TwiML enviada: {twiml[:200]}...")
+    return Response(content=twiml, media_type="text/xml")
