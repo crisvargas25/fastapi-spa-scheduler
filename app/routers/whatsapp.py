@@ -44,12 +44,18 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     if conv.state == "start":
         # Lista servicios como botones (quick replies)
         services = db.query(Service).all()
-        msg = response.message("Hola! Bienvenido a Spa Splendeur. Elige un servicio:")
-        quick_replies = [{"payload": str(service.id), "title": service.name} for service in services]
-        msg.quick_replies = quick_replies
-        conv.state = "choose_service"
-        conv.data = "{}"  # Inicializa data como JSON vacío
-        db.commit()
+        logger.info(f"Servicios encontrados: {services}")  # Debug
+        if not services:
+            response.message("No hay servicios disponibles. Contacta a soporte.")
+        else:
+            quick_replies = [{"payload": str(service.id), "title": service.name} for service in services]
+            response.message(
+                "Hola! Bienvenido a Spa Splendeur. Elige un servicio:",
+                quick_replies=quick_replies
+            )
+            conv.state = "choose_service"
+            conv.data = "{}"  # Inicializa data como JSON vacío
+            db.commit()
     elif conv.state == "choose_service":
         # Procesa selección de servicio (botón)
         try:
@@ -58,8 +64,8 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
             if not service:
                 response.message("Servicio no válido. Elige de nuevo.")
                 services = db.query(Service).all()
-                msg = response.message("Elige un servicio:")
-                msg.quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
+                quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
+                response.message("Elige un servicio:", quick_replies=quick_replies)
             else:
                 conv.data = f'{{"service_id": {service_id}}}'
                 conv.state = "choose_date"
@@ -67,13 +73,13 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
                 # Lista días disponibles (próximos 7 días, placeholder)
                 response.message(f"Has elegido: {service.name}. Elige una fecha:")
                 dates = [(datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
-                msg = response.message()
-                msg.quick_replies = [{"payload": date, "title": date} for date in dates]
+                quick_replies = [{"payload": date, "title": date} for date in dates]
+                response.message(quick_replies=quick_replies)
         except ValueError:
             response.message("Selección inválida. Elige de nuevo.")
             services = db.query(Service).all()
-            msg = response.message("Elige un servicio:")
-            msg.quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
+            quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
+            response.message("Elige un servicio:", quick_replies=quick_replies)
     else:
         response.message("Estado no manejado. Contacta a soporte.")
 
