@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import Response  # Nueva importación para header XML
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from ..database import get_db
@@ -7,6 +7,7 @@ from ..models import Service, Conversation
 import os
 from dotenv import load_dotenv
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -37,21 +38,49 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(conv)
 
-    # Flujo simple inicial: Responde con template de bienvenida
+    # Flujo con botones
     response = MessagingResponse()
     if conv.state == "start":
-        # Template dinámico: Lista servicios de DB (basado en tu PDF)
+        # Lista servicios como botones
         services = db.query(Service).all()
-        service_list = "\n".join([f"- {s.name}" for s in services])
-        reply = f"Hola! Bienvenido a Spa Splendeur. Elige un servicio:\n{service_list}\nResponde con el nombre del servicio."
-        response.message(reply)
-        conv.state = "choose_service"  # Avanza estado
+        msg = "Hola! Bienvenido a Spa Splendeur. Elige un servicio:"
+        with response.message(msg) as msg:
+            for service in services:
+                msg.quick_reply(payload=service.id, content=service.name)
+        conv.state = "choose_service"
+        conv.data = "{}"  # Inicializa data como JSON vacío
         db.commit()
+    elif conv.state == "choose_service":
+        # Procesa selección de servicio (botón)
+        try:
+            service_id = int(message)  # Asume que el payload es el ID
+            service = db.query(Service).filter_by(id=service_id).first()
+            if not service:
+                response.message("Servicio no válido. Elige de nuevo.")
+                with response.message() as msg:
+                    services = db.query(Service).all()
+                    for s in services:
+                        msg.quick_reply(payload=s.id, content=s.name)
+            else:
+                conv.data = f'{{"service_id": {service_id}}}'
+                conv.state = "choose_date"
+                db.commit()
+                # Lista días disponibles (próximos 7 días, placeholder)
+                response.message(f"Has elegido: {service.name}. Elige una fecha:")
+                with response.message() as msg:
+                    for i in range(7):
+                        date = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
+                        msg.quick_reply(payload=date, content=date)
+        except ValueError:
+            response.message("Selección inválida. Elige de nuevo.")
+            with response.message() as msg:
+                services = db.query(Service).all()
+                for s in services:
+                    msg.quick_reply(payload=s.id, content=s.name)
     else:
-        # Placeholder para próximos estados
-        response.message("Mensaje recibido: " + message)
+        response.message("Estado no manejado. Contacta a soporte.")
 
-    # Devuelve Response con Content-Type XML para Twilio
+    # Devuelve Response con Content-Type XML
     xml_content = str(response)
-    logger.info(f"Respuesta XML enviada: {xml_content[:100]}...")  # Log parcial para debug
+    logger.info(f"Respuesta XML enviada: {xml_content[:100]}...")
     return Response(content=xml_content, media_type="text/xml")
