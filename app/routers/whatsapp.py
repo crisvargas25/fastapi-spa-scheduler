@@ -21,9 +21,10 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     logger.info("Webhook llamado - Solicitud recibida")
     form = await request.form()
-    logger.info(f"Form data: {dict(form)}")
-    from_number = form.get("From")
-    message = form.get("Body")
+    form_data = dict(form)
+    logger.info(f"Form data: {form_data}")
+    from_number = form_data.get("From")
+    message = form_data.get("Body")
     logger.info(f"From: {from_number}, Body: {message}")
 
     if not from_number or not message:
@@ -41,42 +42,38 @@ async def whatsapp_incoming(request: Request, db: Session = Depends(get_db)):
     # Flujo con botones
     response = MessagingResponse()
     if conv.state == "start":
-        # Lista servicios como botones
+        # Lista servicios como botones (quick replies)
         services = db.query(Service).all()
-        msg = "Hola! Bienvenido a Spa Splendeur. Elige un servicio:"
-        with response.message(msg) as msg:
-            for service in services:
-                msg.quick_reply(payload=service.id, content=service.name)
+        msg = response.message("Hola! Bienvenido a Spa Splendeur. Elige un servicio:")
+        quick_replies = [{"payload": str(service.id), "title": service.name} for service in services]
+        msg.quick_replies = quick_replies
         conv.state = "choose_service"
         conv.data = "{}"  # Inicializa data como JSON vacío
         db.commit()
     elif conv.state == "choose_service":
         # Procesa selección de servicio (botón)
         try:
-            service_id = int(message)  # Asume que el payload es el ID
+            service_id = int(message)  # Payload es el ID como string
             service = db.query(Service).filter_by(id=service_id).first()
             if not service:
                 response.message("Servicio no válido. Elige de nuevo.")
-                with response.message() as msg:
-                    services = db.query(Service).all()
-                    for s in services:
-                        msg.quick_reply(payload=s.id, content=s.name)
+                services = db.query(Service).all()
+                msg = response.message("Elige un servicio:")
+                msg.quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
             else:
                 conv.data = f'{{"service_id": {service_id}}}'
                 conv.state = "choose_date"
                 db.commit()
                 # Lista días disponibles (próximos 7 días, placeholder)
                 response.message(f"Has elegido: {service.name}. Elige una fecha:")
-                with response.message() as msg:
-                    for i in range(7):
-                        date = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
-                        msg.quick_reply(payload=date, content=date)
+                dates = [(datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+                msg = response.message()
+                msg.quick_replies = [{"payload": date, "title": date} for date in dates]
         except ValueError:
             response.message("Selección inválida. Elige de nuevo.")
-            with response.message() as msg:
-                services = db.query(Service).all()
-                for s in services:
-                    msg.quick_reply(payload=s.id, content=s.name)
+            services = db.query(Service).all()
+            msg = response.message("Elige un servicio:")
+            msg.quick_replies = [{"payload": str(s.id), "title": s.name} for s in services]
     else:
         response.message("Estado no manejado. Contacta a soporte.")
 
